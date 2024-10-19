@@ -49,38 +49,39 @@ public class Attach {
         // Get the jvm process PID from args[0] or manual input
         // And get the spring http port from manual input
         String pid = null;
-        Scanner scanner = new Scanner(System.in);
+        try (Scanner scanner = new Scanner(System.in)) {
+            if (args.length > 0) {
+                pid = args[0].trim();
+                try {
+                    Integer.parseInt(pid);
+                } catch (Exception e) {
+                    System.err.println("The pid should be integer.");
+                    throw e;
+                }
+            } else {
+                List<VirtualMachineDescriptor> jps = VirtualMachine.list();
+                jps.sort(Comparator.comparing(VirtualMachineDescriptor::displayName));
+                int i = 0;
+                for (; i < jps.size(); i++) {
+                    System.out.printf("[%s] %s %s%n", i, jps.get(i).id(), jps.get(i).displayName());
+                }
+                System.out.printf("[%s] %s%n", i, "Custom PID");
+                System.out.println(">>>>>>>>>>>>Please enter the serial number");
 
-        if (args.length > 0) {
-            pid = args[0].trim();
-            try {
-                Integer.parseInt(pid);
-            } catch (Exception e) {
-                System.err.println("The pid should be integer.");
-                throw e;
-            }
-        } else {
-            List<VirtualMachineDescriptor> jps = VirtualMachine.list();
-            jps.sort(Comparator.comparing(VirtualMachineDescriptor::displayName));
-            int i = 0;
-            for (; i < jps.size(); i++) {
-                System.out.printf("[%s] %s %s%n", i, jps.get(i).id(), jps.get(i).displayName());
-            }
-            System.out.printf("[%s] %s%n", i, "Custom PID");
-            System.out.println(">>>>>>>>>>>>Please enter the serial number");
-
-            while (true) {
-                int index = scanner.nextInt();
-                if (index < 0 || index > i) continue;
-                if (index == i) {
-                    System.out.println(">>>>>>>>>>>>Please enter the PID");
-                    pid = String.valueOf(scanner.nextInt());
+                while (true) {
+                    int index = scanner.nextInt();
+                    if (index < 0 || index > i) continue;
+                    if (index == i) {
+                        System.out.println(">>>>>>>>>>>>Please enter the PID");
+                        pid = String.valueOf(scanner.nextInt());
+                        break;
+                    }
+                    pid = jps.get(index).id();
                     break;
                 }
-                pid = jps.get(index).id();
-                break;
             }
         }
+
         System.out.printf("============The PID is %s%n", pid);
         VirtualMachine jvm = VirtualMachine.attach(pid);
         URL jarUrl = Attach.class.getProtectionDomain().getCodeSource().getLocation();
@@ -97,6 +98,7 @@ public class Attach {
             jvm.detach();
         } catch (Exception e) {
             if (!Objects.equals(e.getMessage(), "0")) {
+                System.out.println("Attach failed, have a look at swapper-error.log");
                 throw e;
             }
         }

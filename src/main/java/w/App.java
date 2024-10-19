@@ -3,10 +3,7 @@ package w;
 import java.io.*;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.Date;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -22,32 +19,51 @@ public class App {
     private static final int DEFAULT_WEBSOCKET_PORT = 18000;
 
     public static void agentmain(String arg, Instrumentation instrumentation) throws Exception {
-        if (arg != null && arg.length() > 0) {
-            String[] items = arg.split("&");
-            for (String item : items) {
-                String[] kv = item.split("=");
-                if (kv.length == 2) {
-                    if (System.getProperty(kv[0]) == null) {
-                        System.setProperty(kv[0], kv[1]);
+        if (Global.instrumentation != null) {
+            try (PrintWriter out = new PrintWriter(new FileWriter("swapper-error.log", true))) {
+                out.println(new Date() + " swapper already injected!");
+                throw new IllegalStateException("swapper already injected!");
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
+        }
+        
+        try {
+            if (arg != null && arg.length() > 0) {
+                String[] items = arg.split("&");
+                for (String item : items) {
+                    String[] kv = item.split("=");
+                    if (kv.length == 2) {
+                        if (System.getProperty(kv[0]) == null) {
+                            System.setProperty(kv[0], kv[1]);
+                        }
                     }
                 }
             }
+            Global.instrumentation = instrumentation;
+            Global.fillLoadedClasses();
+
+            // 1 record the spring boot classloader
+            SpringUtils.initFromLoadedClasses();
+
+            // 2 start http and websocket server
+            startHttpd();
+            startWebsocketd();
+
+            // 3 init execInstance
+            initExecInstance();
+
+            // 4 task to clean closed ws and related enhancer
+            schedule();
+        } catch (Exception e) {
+            try (PrintWriter out = new PrintWriter(new FileWriter("swapper-error.log", true))) {
+                out.println(new Date() + "Exception in Agent: " + e.getMessage());
+                e.printStackTrace(out);
+                throw new IllegalStateException(e);
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
         }
-        Global.instrumentation = instrumentation;
-        Global.fillLoadedClasses();
-
-        // 1 record the spring boot classloader
-        SpringUtils.initFromLoadedClasses();
-
-        // 2 start http and websocket server
-        startHttpd();
-        startWebsocketd();
-
-        // 3 init execInstance
-        initExecInstance();
-
-        // 4 task to clean closed ws and related enhancer
-        schedule();
     }
 
     private static void startHttpd() throws IOException {
